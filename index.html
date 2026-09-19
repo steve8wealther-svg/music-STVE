@@ -664,3 +664,157 @@
           const file = new File([blob], rec.name, { type: rec.type, lastModified: Date.now() });
           Object.defineProperty(file, 'webkitRelativePath', {
             value: rec.relativePat
+                  if (!activePlaylist.length) return;
+      loadTrack((currentIndex + 1) % activePlaylist.length);
+      playTrack();
+    }
+
+    function prevTrack() {
+      if (!activePlaylist.length) return;
+      loadTrack((currentIndex - 1 + activePlaylist.length) % activePlaylist.length);
+      playTrack();
+    }
+
+    nextBtn.addEventListener('click', nextTrack);
+    prevBtn.addEventListener('click', prevTrack);
+    audioPlayer.addEventListener('ended', nextTrack);
+
+    audioPlayer.addEventListener('timeupdate', () => {
+      if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+        if (audioPlayer.duration && !isNaN(audioPlayer.duration)) {
+          navigator.mediaSession.setPositionState({
+            duration: audioPlayer.duration,
+            playbackRate: audioPlayer.playbackRate || 1,
+            position: audioPlayer.currentTime
+          });
+        }
+      }
+    });
+
+    async function moveItem(fromIndex, toIndex) {
+      if (toIndex < 0 || toIndex >= rawFiles.length) return;
+      const currentPlayingItem = activePlaylist[currentIndex];
+
+      const temp = rawFiles[fromIndex];
+      rawFiles[fromIndex] = rawFiles[toIndex];
+      rawFiles[toIndex] = temp;
+
+      buildActivePlaylist();
+      
+      if (currentPlayingItem) {
+        const newIdx = activePlaylist.findIndex(item => item.id === currentPlayingItem.id);
+        if (newIdx !== -1) currentIndex = newIdx;
+      }
+
+      renderPlaylist();
+      await saveAllTracksToStorage(rawFiles, folderStates);
+    }
+
+    function renderPlaylist() {
+      playlistTree.replaceChildren();
+
+      if (!rawFiles.length) {
+        playlistTree.appendChild(emptyPlaylist);
+        playlistCount.textContent = '00 tracks';
+        return;
+      }
+
+      playlistCount.textContent = `${String(activePlaylist.length).padStart(2, '0')} active tracks`;
+
+      const grouped = {};
+      rawFiles.forEach((item, rawIndex) => {
+        if (!grouped[item.folderName]) grouped[item.folderName] = [];
+        grouped[item.folderName].push({ ...item, rawIndex });
+      });
+
+      Object.keys(grouped).forEach((folderName) => {
+        const folderGroup = document.createElement('div');
+        folderGroup.className = 'folder-group';
+        const items = grouped[folderName];
+
+        const folderHeader = document.createElement('div');
+        folderHeader.className = 'folder-header';
+
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'folder-title-wrap';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'folder-checkbox';
+        checkbox.checked = Boolean(folderStates[folderName]);
+        checkbox.addEventListener('change', async (e) => {
+          folderStates[folderName] = e.target.checked;
+          const playingItem = activePlaylist[currentIndex];
+          
+          buildActivePlaylist();
+          
+          if (playingItem) {
+            const newIndex = activePlaylist.findIndex(i => i.id === playingItem.id);
+            if (newIndex !== -1) {
+              currentIndex = newIndex;
+            } else if (activePlaylist.length) {
+              loadTrack(0);
+            } else {
+              audioPlayer.pause();
+              updatePlayControl(false);
+              resetTrackInfo();
+            }
+          }
+
+          renderPlaylist();
+          await saveAllTracksToStorage(rawFiles, folderStates);
+        });
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'folder-toggle-btn';
+        toggleBtn.innerHTML = `<i data-lucide="folder" style="width:16px;height:16px"></i> <span>${folderName} (${items.length})</span>`;
+        toggleBtn.addEventListener('click', () => folderGroup.classList.toggle('collapsed'));
+
+        titleWrap.append(checkbox, toggleBtn);
+        folderHeader.append(titleWrap);
+
+        const itemsContainer = document.createElement('div');
+        itemsContainer.className = 'folder-items';
+
+        items.forEach((item) => {
+          const itemEl = document.createElement('div');
+          const isFolderActive = folderStates[folderName];
+          const activeIndex = activePlaylist.findIndex(a => a.id === item.id);
+          const isActiveTrack = activeIndex === currentIndex && isFolderActive;
+
+          itemEl.className = `playlist-item ${!isFolderActive ? 'disabled' : ''} ${isActiveTrack ? 'active' : ''}`;
+
+          const selectBtn = document.createElement('button');
+          selectBtn.className = 'item-select-btn';
+          selectBtn.innerHTML = `
+            <span class="track-number">${activeIndex !== -1 ? String(activeIndex + 1).padStart(2, '0') : '--'}</span>
+            <span class="track-name">${item.file.name}</span>
+          `;
+
+          selectBtn.addEventListener('click', () => {
+            if (!folderStates[folderName]) return;
+            if (activeIndex !== -1) {
+              loadTrack(activeIndex);
+              playTrack();
+            }
+          });
+
+          const reorderBtns = document.createElement('div');
+          reorderBtns.className = 'reorder-btns';
+
+          const upBtn = document.createElement('button');
+          upBtn.className = 'reorder-btn';
+          upBtn.innerHTML = '▲';
+          upBtn.disabled = item.rawIndex === 0;
+          upBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            moveItem(item.rawIndex, item.rawIndex - 1);
+          });
+
+          const downBtn = document.createElement('button');
+          downBtn.className = 'reorder-btn';
+          downBtn.innerHTML = '▼';
+          downBtn.disabled = item.rawIndex === rawFiles.length - 1;
+          downBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            moveItem(item.
