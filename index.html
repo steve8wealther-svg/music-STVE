@@ -449,6 +449,9 @@
             <button id="notificationBtn" class="action-btn secondary" type="button" title="Aktifkan Notifikasi Latar Belakang">
               <i data-lucide="bell" style="width:12px;height:12px"></i> Notifikasi
             </button>
+            <button id="clearStorageBtn" class="action-btn secondary" type="button" style="display: none;" title="Hapus Lagu Tersimpan di Browser">
+              <i data-lucide="trash-2" style="width:12px;height:12px"></i> Hapus Simpanan
+            </button>
             <button id="installPwaBtn" class="action-btn pwa-install-btn" type="button">
               <i data-lucide="download" style="width:12px;height:12px"></i> Install App
             </button>
@@ -535,7 +538,6 @@
             e.respondWith(fetch(e.request).catch(() => new Response('Offline')));
           });
 
-          // Handle notifikasi interaktif dari luar website
           self.addEventListener('notificationclick', (e) => {
             e.notification.close();
             const action = e.action;
@@ -566,465 +568,99 @@
     let deferredPrompt;
     const installPwaBtn = document.getElementById('installPwaBtn');
     const notificationBtn = document.getElementById('notificationBtn');
+    const clearStorageBtn = document.getElementById('clearStorageBtn');
 
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      installPwaBtn.style.display = 'inline-flex';
-    });
+    // --- INDEXEDDB STORAGE SYSTEM FOR PERMANENT FILE SAVING ---
+    const DB_NAME = 'MinecraftMusicPlayerDB';
+    const DB_VERSION = 1;
 
-    installPwaBtn.addEventListener('click', async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') {
-        installPwaBtn.style.display = 'none';
-      }
-      deferredPrompt = null;
-    });
-
-    // --- 2. NOTIFIKASI KUSTOM SISTEM ---
-    function updateNotificationBtnState() {
-      if (!('Notification' in window)) {
-        notificationBtn.style.display = 'none';
-        return;
-      }
-      if (Notification.permission === 'granted') {
-        notificationBtn.style.background = '#5f9f3d';
-        notificationBtn.title = 'Notifikasi Latar Belakang Aktif';
-      } else if (Notification.permission === 'denied') {
-        notificationBtn.style.background = '#8a332d';
-        notificationBtn.title = 'Notifikasi Ditolak di Browser';
-      }
-    }
-
-    notificationBtn.addEventListener('click', async () => {
-      if (!('Notification' in window)) {
-        alert('Browser Anda tidak mendukung notifikasi web.');
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      updateNotificationBtnState();
-      if (permission === 'granted') {
-        showCustomBackgroundNotification("Notifikasi Aktif!", "Anda dapat mengontrol lagu di luar website.");
-      }
-    });
-
-    updateNotificationBtnState();
-
-    function showCustomBackgroundNotification(title, body) {
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
-
-      const options = {
-        body: body,
-        icon: MINECRAFT_DISC_ICON,
-        badge: MINECRAFT_DISC_ICON,
-        tag: 'mc-music-player-status',
-        renotify: true,
-        silent: true,
-        actions: [
-          { action: 'prev', title: '⏮ Sebelumnya' },
-          { action: 'playpause', title: audioPlayer.paused ? '▶ Putar' : '⏸ Jeda' },
-          { action: 'next', title: '⏭ Selanjutnya' }
-        ]
-      };
-
-      if (swRegistration && swRegistration.showNotification) {
-        swRegistration.showNotification(title, options).catch(() => {});
-      } else {
-        try {
-          new Notification(title, options);
-        } catch (e) {
-          // Ignored if browser strictly requires SW for actions
-        }
-      }
-    }
-
-    function handleBackgroundAction(action) {
-      switch (action) {
-        case 'prev':
-          prevTrack();
-          break;
-        case 'next':
-          nextTrack();
-          break;
-        case 'playpause':
-          if (activePlaylist.length) {
-            audioPlayer.paused ? playTrack() : pauseTrack();
+    function openMusicDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('tracks')) {
+            db.createObjectStore('tracks', { keyPath: 'id' });
           }
-          break;
-      }
-    }
-
-    // --- 3. MUSIC PLAYER CORE LOGIC ---
-    const folderInput = document.getElementById('folderInput');
-    const audioPlayer = document.getElementById('audioPlayer');
-    const trackTitle = document.getElementById('trackTitle');
-    const trackPath = document.getElementById('trackPath');
-    const trackStatus = document.getElementById('trackStatus');
-    const playBtn = document.getElementById('playBtn');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const playlistTree = document.getElementById('playlistTree');
-    const emptyPlaylist = document.getElementById('emptyPlaylist');
-    const playlistCount = document.getElementById('playlistCount');
-    const playerMessage = document.getElementById('playerMessage');
-
-    let rawFiles = [];
-    let folderStates = {}; // status aktif/centang subfolder
-    let activePlaylist = []; // lagu yang dicentang & diurutkan
-    let currentIndex = 0;
-    let activeObjectUrl = null;
-
-    function updatePlayControl(isPlaying) {
-      playBtn.setAttribute('aria-pressed', String(isPlaying));
-      playBtn.setAttribute('aria-label', isPlaying ? 'Jeda lagu' : 'Putar lagu');
-      playBtn.innerHTML = `<i data-lucide="${isPlaying ? 'pause' : 'play'}" style="width:28px;height:28px;${isPlaying ? '' : 'fill:currentColor'}"></i>`;
-      lucide.createIcons();
-
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-      }
-    }
-
-    function showMessage(message, isError) {
-      playerMessage.textContent = message;
-      playerMessage.classList.toggle('is-error', Boolean(isError));
-    }
-
-    folderInput.addEventListener('change', (event) => {
-      const files = Array.from(event.target.files);
-      const audioFiles = files.filter((file) =>
-        file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|m4a|ogg|flac|aac)$/i)
-      );
-
-      if (!audioFiles.length) {
-        rawFiles = [];
-        activePlaylist = [];
-        renderPlaylist();
-        resetTrackInfo();
-        showMessage('Tidak ditemukan file musik dalam folder ini.', true);
-        return;
-      }
-
-      audioFiles.sort((a, b) => {
-        const pathA = a.webkitRelativePath || a.name;
-        const pathB = b.webkitRelativePath || b.name;
-        return pathA.localeCompare(pathB, 'id', { numeric: true });
-      });
-
-      rawFiles = audioFiles.map((file, id) => ({
-        id,
-        file,
-        folderName: getFolderName(file)
-      }));
-
-      // Setel semua subfolder menjadi aktif secara default
-      folderStates = {};
-      rawFiles.forEach(item => {
-        folderStates[item.folderName] = true;
-      });
-
-      buildActivePlaylist();
-      currentIndex = 0;
-      showMessage('', false);
-      renderPlaylist();
-      
-      if (activePlaylist.length) {
-        loadTrack(currentIndex);
-        playTrack();
-      }
-    });
-
-    function getFolderName(file) {
-      const relativePath = file.webkitRelativePath || file.name;
-      const pathParts = relativePath.split('/');
-      return pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : 'Folder Utama';
-    }
-
-    function buildActivePlaylist() {
-      activePlaylist = rawFiles.filter(item => folderStates[item.folderName]);
-    }
-
-    function resetTrackInfo() {
-      trackTitle.textContent = 'Belum ada lagu dipilih';
-      trackPath.textContent = '';
-      trackStatus.textContent = '— / —';
-    }
-
-    function loadTrack(index) {
-      if (!activePlaylist.length) {
-        audioPlayer.src = '';
-        resetTrackInfo();
-        return;
-      }
-
-      if (index >= activePlaylist.length) index = 0;
-      if (index < 0) index = activePlaylist.length - 1;
-      currentIndex = index;
-
-      if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
-      const currentItem = activePlaylist[currentIndex];
-      activeObjectUrl = URL.createObjectURL(currentItem.file);
-      audioPlayer.src = activeObjectUrl;
-
-      trackTitle.textContent = currentItem.file.name;
-      trackPath.textContent = currentItem.file.webkitRelativePath ? `📁 ${currentItem.file.webkitRelativePath}` : '';
-      trackStatus.textContent = `Lagu ${currentIndex + 1} dari ${activePlaylist.length}`;
-
-      updatePlaylistHighlight();
-      setupMediaSession(currentItem.file.name, currentItem.folderName);
-
-      // Tampilkan notifikasi kustom saat berganti lagu di luar tab/aplikasi
-      if (document.hidden) {
-        showCustomBackgroundNotification(
-          currentItem.file.name,
-          `Memutar dari: ${currentItem.folderName}`
-        );
-      }
-    }
-
-    function playTrack() {
-      if (!activePlaylist.length) return;
-      audioPlayer.play()
-        .then(() => {
-          updatePlayControl(true);
-          showMessage('', false);
-          if (document.hidden && activePlaylist[currentIndex]) {
-            showCustomBackgroundNotification(
-              activePlaylist[currentIndex].file.name,
-              `Memutar dari: ${activePlaylist[currentIndex].folderName}`
-            );
+          if (!db.objectStoreNames.contains('settings')) {
+            db.createObjectStore('settings', { keyPath: 'key' });
           }
-        })
-        .catch(() => {
-          updatePlayControl(false);
-          showMessage('Pemutaran belum dapat dimulai. Coba tekan tombol putar.', true);
-        });
-    }
-    
-    function pauseTrack() {
-      audioPlayer.pause();
-      updatePlayControl(false);
-      if (document.hidden && activePlaylist[currentIndex]) {
-        showCustomBackgroundNotification(
-          "⏸ Dijeda: " + activePlaylist[currentIndex].file.name,
-          `Minecraft Music Player`
-        );
-      }
-    }
-
-    playBtn.addEventListener('click', () => {
-      if (!activePlaylist.length) {
-        showMessage('Tidak ada lagu aktif yang dapat diputar.', true);
-        return;
-      }
-      audioPlayer.paused ? playTrack() : pauseTrack();
-    });
-
-    function nextTrack() {
-      if (!activePlaylist.length) return;
-      loadTrack((currentIndex + 1) % activePlaylist.length);
-      playTrack();
-    }
-
-    function prevTrack() {
-      if (!activePlaylist.length) return;
-      loadTrack((currentIndex - 1 + activePlaylist.length) % activePlaylist.length);
-      playTrack();
-    }
-
-    nextBtn.addEventListener('click', nextTrack);
-    prevBtn.addEventListener('click', prevTrack);
-    audioPlayer.addEventListener('ended', nextTrack);
-
-    // Sync durasi & waktu untuk MediaSession OS Lockscreen
-    audioPlayer.addEventListener('timeupdate', () => {
-      if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-        if (audioPlayer.duration && !isNaN(audioPlayer.duration)) {
-          navigator.mediaSession.setPositionState({
-            duration: audioPlayer.duration,
-            playbackRate: audioPlayer.playbackRate || 1,
-            position: audioPlayer.currentTime
-          });
-        }
-      }
-    });
-
-    function moveItem(fromIndex, toIndex) {
-      if (toIndex < 0 || toIndex >= rawFiles.length) return;
-      const currentPlayingItem = activePlaylist[currentIndex];
-
-      const temp = rawFiles[fromIndex];
-      rawFiles[fromIndex] = rawFiles[toIndex];
-      rawFiles[toIndex] = temp;
-
-      buildActivePlaylist();
-      
-      if (currentPlayingItem) {
-        const newIdx = activePlaylist.findIndex(item => item.id === currentPlayingItem.id);
-        if (newIdx !== -1) currentIndex = newIdx;
-      }
-
-      renderPlaylist();
-    }
-
-    function renderPlaylist() {
-      playlistTree.replaceChildren();
-
-      if (!rawFiles.length) {
-        playlistTree.appendChild(emptyPlaylist);
-        playlistCount.textContent = '00 tracks';
-        return;
-      }
-
-      playlistCount.textContent = `${String(activePlaylist.length).padStart(2, '0')} active tracks`;
-
-      const grouped = {};
-      rawFiles.forEach((item, rawIndex) => {
-        if (!grouped[item.folderName]) grouped[item.folderName] = [];
-        grouped[item.folderName].push({ ...item, rawIndex });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (e) => reject(e.target.error);
       });
-
-      Object.keys(grouped).forEach((folderName) => {
-        const folderGroup = document.createElement('div');
-        folderGroup.className = 'folder-group';
-        const items = grouped[folderName];
-
-        const folderHeader = document.createElement('div');
-        folderHeader.className = 'folder-header';
-
-        const titleWrap = document.createElement('div');
-        titleWrap.className = 'folder-title-wrap';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'folder-checkbox';
-        checkbox.checked = Boolean(folderStates[folderName]);
-        checkbox.addEventListener('change', (e) => {
-          folderStates[folderName] = e.target.checked;
-          const playingItem = activePlaylist[currentIndex];
-          
-          buildActivePlaylist();
-          
-          if (playingItem) {
-            const newIndex = activePlaylist.findIndex(i => i.id === playingItem.id);
-            if (newIndex !== -1) {
-              currentIndex = newIndex;
-            } else if (activePlaylist.length) {
-              loadTrack(0);
-            } else {
-              audioPlayer.pause();
-              updatePlayControl(false);
-              resetTrackInfo();
-            }
-          }
-
-          renderPlaylist();
-        });
-
-        const toggleBtn = document.createElement('button');
-        toggleBtn.className = 'folder-toggle-btn';
-        toggleBtn.innerHTML = `<i data-lucide="folder" style="width:16px;height:16px"></i> <span>${folderName} (${items.length})</span>`;
-        toggleBtn.addEventListener('click', () => folderGroup.classList.toggle('collapsed'));
-
-        titleWrap.append(checkbox, toggleBtn);
-        folderHeader.append(titleWrap);
-
-        const itemsContainer = document.createElement('div');
-        itemsContainer.className = 'folder-items';
-
-        items.forEach((item) => {
-          const itemEl = document.createElement('div');
-          const isFolderActive = folderStates[folderName];
-          const activeIndex = activePlaylist.findIndex(a => a.id === item.id);
-          const isActiveTrack = activeIndex === currentIndex && isFolderActive;
-
-          itemEl.className = `playlist-item ${!isFolderActive ? 'disabled' : ''} ${isActiveTrack ? 'active' : ''}`;
-
-          const selectBtn = document.createElement('button');
-          selectBtn.className = 'item-select-btn';
-          selectBtn.innerHTML = `
-            <span class="track-number">${activeIndex !== -1 ? String(activeIndex + 1).padStart(2, '0') : '--'}</span>
-            <span class="track-name">${item.file.name}</span>
-          `;
-
-          selectBtn.addEventListener('click', () => {
-            if (!folderStates[folderName]) return;
-            if (activeIndex !== -1) {
-              loadTrack(activeIndex);
-              playTrack();
-            }
-          });
-
-          const reorderBtns = document.createElement('div');
-          reorderBtns.className = 'reorder-btns';
-
-          const upBtn = document.createElement('button');
-          upBtn.className = 'reorder-btn';
-          upBtn.innerHTML = '▲';
-          upBtn.disabled = item.rawIndex === 0;
-          upBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            moveItem(item.rawIndex, item.rawIndex - 1);
-          });
-
-          const downBtn = document.createElement('button');
-          downBtn.className = 'reorder-btn';
-          downBtn.innerHTML = '▼';
-          downBtn.disabled = item.rawIndex === rawFiles.length - 1;
-          downBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            moveItem(item.rawIndex, item.rawIndex + 1);
-          });
-
-          reorderBtns.append(upBtn, downBtn);
-          itemEl.append(selectBtn, reorderBtns);
-          itemsContainer.appendChild(itemEl);
-        });
-
-        folderGroup.append(folderHeader, itemsContainer);
-        playlistTree.appendChild(folderGroup);
-      });
-
-      lucide.createIcons();
     }
 
-    function updatePlaylistHighlight() {
-      renderPlaylist();
-    }
-
-    // --- 4. MEDIA SESSION INTEGRATION (Lockscreen & OS System Control) ---
-    function setupMediaSession(title, albumName = 'Folder Musik Lokal') {
-      if (!('mediaSession' in navigator)) return;
-
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: title,
-        artist: 'Minecraft Music Player',
-        album: albumName,
-        artwork: [
-          { src: MINECRAFT_DISC_ICON, sizes: '96x96', type: 'image/svg+xml' },
-          { src: MINECRAFT_DISC_ICON, sizes: '512x512', type: 'image/svg+xml' }
-        ]
-      });
-
-      navigator.mediaSession.setActionHandler('play', playTrack);
-      navigator.mediaSession.setActionHandler('pause', pauseTrack);
-      navigator.mediaSession.setActionHandler('previoustrack', prevTrack);
-      navigator.mediaSession.setActionHandler('nexttrack', nextTrack);
-      
+    async function saveAllTracksToStorage(filesList, folderStatesObj) {
       try {
-        navigator.mediaSession.setActionHandler('seekto', (details) => {
-          if (details.seekTime && audioPlayer.duration) {
-            audioPlayer.currentTime = details.seekTime;
-          }
+        showMessage('Menyimpan file ke memori browser...', false);
+        const db = await openMusicDB();
+        const tx = db.transaction(['tracks', 'settings'], 'readwrite');
+        const tracksStore = tx.objectStore('tracks');
+        const settingsStore = tx.objectStore('settings');
+
+        // Clear previous tracks
+        await new Promise((res, rej) => {
+          const clearReq = tracksStore.clear();
+          clearReq.onsuccess = res;
+          clearReq.onerror = rej;
         });
-      } catch (e) {
-        // Fallback untuk browser yang belum mendukung seekto
+
+        // Save each file converted to ArrayBuffer
+        for (let i = 0; i < filesList.length; i++) {
+          const item = filesList[i];
+          const buffer = await item.file.arrayBuffer();
+          tracksStore.put({
+            id: item.id,
+            name: item.file.name,
+            relativePath: item.file.webkitRelativePath || item.file.name,
+            folderName: item.folderName,
+            type: item.file.type || 'audio/mpeg',
+            data: buffer
+          });
+        }
+
+        settingsStore.put({ key: 'folderStates', value: folderStatesObj });
+
+        await new Promise((res, rej) => {
+          tx.oncomplete = res;
+          tx.onerror = rej;
+        });
+
+        clearStorageBtn.style.display = 'inline-flex';
+        showMessage('✓ Berhasil menyimpan ' + filesList.length + ' lagu ke memori lokal!', false);
+      } catch (err) {
+        console.error('IndexedDB Save Error:', err);
+        showMessage('Catatan: Lagu dapat diputar, namun kuota penyimpanan browser penuh/terbatasi.', true);
       }
     }
 
-    lucide.createIcons();
-  </script>
-</body>
-</html>
+    async function loadTracksFromStorage() {
+      try {
+        const db = await openMusicDB();
+        const tx = db.transaction(['tracks', 'settings'], 'readonly');
+        const tracksStore = tx.objectStore('tracks');
+        const settingsStore = tx.objectStore('settings');
+
+        const tracksReq = tracksStore.getAll();
+        const settingsReq = settingsStore.get('folderStates');
+
+        const tracksData = await new Promise((res, rej) => {
+          tracksReq.onsuccess = () => res(tracksReq.result);
+          tracksReq.onerror = rej;
+        });
+
+        if (!tracksData || tracksData.length === 0) {
+          return false;
+        }
+
+        const settingsData = await new Promise((res, rej) => {
+          settingsReq.onsuccess = () => res(settingsReq.result);
+          settingsReq.onerror = rej;
+        });
+
+        rawFiles = tracksData.map((rec) => {
+          const blob = new Blob([rec.data], { type: rec.type });
+          const file = new File([blob], rec.name, { type: rec.type, lastModified: Date.now() });
+          Object.defineProperty(file, 'webkitRelativePath', {
+            value: rec.relativePat
