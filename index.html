@@ -664,7 +664,328 @@
           const file = new File([blob], rec.name, { type: rec.type, lastModified: Date.now() });
           Object.defineProperty(file, 'webkitRelativePath', {
             value: rec.relativePat
-                  if (!activePlaylist.length) return;
+              writable: false
+          });
+          return {
+            id: rec.id,
+            file: file,
+            folderName: rec.folderName
+          };
+        });
+
+        folderStates = (settingsData && settingsData.value) ? settingsData.value : {};
+        if (Object.keys(folderStates).length === 0) {
+          rawFiles.forEach(item => {
+            folderStates[item.folderName] = true;
+          });
+        }
+
+        buildActivePlaylist();
+        currentIndex = 0;
+        renderPlaylist();
+
+        if (activePlaylist.length) {
+          loadTrack(currentIndex);
+        }
+
+        clearStorageBtn.style.display = 'inline-flex';
+        showMessage('✓ Memuat ' + rawFiles.length + ' lagu tersimpan dari memori lokal.', false);
+        return true;
+      } catch (err) {
+        console.error('IndexedDB Load Error:', err);
+        return false;
+      }
+    }
+
+    async function clearStorageData() {
+      try {
+        const db = await openMusicDB();
+        const tx = db.transaction(['tracks', 'settings'], 'readwrite');
+        tx.objectStore('tracks').clear();
+        tx.objectStore('settings').clear();
+        await new Promise((res) => { tx.oncomplete = res; });
+
+        rawFiles = [];
+        activePlaylist = [];
+        folderStates = {};
+        if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+        audioPlayer.src = '';
+
+        resetTrackInfo();
+        renderPlaylist();
+        updatePlayControl(false);
+        clearStorageBtn.style.display = 'none';
+        showMessage('Simpanan musik lokal telah dibersihkan.', false);
+      } catch (err) {
+        console.error('IndexedDB Clear Error:', err);
+      }
+    }
+
+    clearStorageBtn.addEventListener('click', clearStorageData);
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installPwaBtn.style.display = 'inline-flex';
+    });
+
+    installPwaBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        installPwaBtn.style.display = 'none';
+      }
+      deferredPrompt = null;
+    });
+
+    // --- NOTIFIKASI KUSTOM SISTEM ---
+    function updateNotificationBtnState() {
+      if (!('Notification' in window)) {
+        notificationBtn.style.display = 'none';
+        return;
+      }
+      if (Notification.permission === 'granted') {
+        notificationBtn.style.background = '#5f9f3d';
+        notificationBtn.title = 'Notifikasi Latar Belakang Aktif';
+      } else if (Notification.permission === 'denied') {
+        notificationBtn.style.background = '#8a332d';
+        notificationBtn.title = 'Notifikasi Ditolak di Browser';
+      }
+    }
+
+    notificationBtn.addEventListener('click', async () => {
+      if (!('Notification' in window)) {
+        alert('Browser Anda tidak mendukung notifikasi web.');
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      updateNotificationBtnState();
+      if (permission === 'granted') {
+        showCustomBackgroundNotification("Notifikasi Aktif!", "Anda dapat mengontrol lagu di luar website.");
+      }
+    });
+
+    updateNotificationBtnState();
+
+    function showCustomBackgroundNotification(title, body) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+      const options = {
+        body: body,
+        icon: MINECRAFT_DISC_ICON,
+        badge: MINECRAFT_DISC_ICON,
+        tag: 'mc-music-player-status',
+        renotify: true,
+        silent: true,
+        actions: [
+          { action: 'prev', title: '⏮ Sebelumnya' },
+          { action: 'playpause', title: audioPlayer.paused ? '▶ Putar' : '⏸ Jeda' },
+          { action: 'next', title: '⏭ Selanjutnya' }
+        ]
+      };
+
+      if (swRegistration && swRegistration.showNotification) {
+        swRegistration.showNotification(title, options).catch(() => {});
+      } else {
+        try {
+          new Notification(title, options);
+        } catch (e) {
+          // Fallback
+        }
+      }
+    }
+
+    function handleBackgroundAction(action) {
+      switch (action) {
+        case 'prev':
+          prevTrack();
+          break;
+        case 'next':
+          nextTrack();
+          break;
+        case 'playpause':
+          if (activePlaylist.length) {
+            audioPlayer.paused ? playTrack() : pauseTrack();
+          }
+          break;
+      }
+    }
+
+    // --- MUSIC PLAYER CORE LOGIC ---
+    const folderInput = document.getElementById('folderInput');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const trackTitle = document.getElementById('trackTitle');
+    const trackPath = document.getElementById('trackPath');
+    const trackStatus = document.getElementById('trackStatus');
+    const playBtn = document.getElementById('playBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const playlistTree = document.getElementById('playlistTree');
+    const emptyPlaylist = document.getElementById('emptyPlaylist');
+    const playlistCount = document.getElementById('playlistCount');
+    const playerMessage = document.getElementById('playerMessage');
+
+    let rawFiles = [];
+    let folderStates = {};
+    let activePlaylist = [];
+    let currentIndex = 0;
+    let activeObjectUrl = null;
+
+    // Auto-load saved files on startup
+    window.addEventListener('DOMContentLoaded', () => {
+      loadTracksFromStorage();
+    });
+
+    function updatePlayControl(isPlaying) {
+      playBtn.setAttribute('aria-pressed', String(isPlaying));
+      playBtn.setAttribute('aria-label', isPlaying ? 'Jeda lagu' : 'Putar lagu');
+      playBtn.innerHTML = `<i data-lucide="${isPlaying ? 'pause' : 'play'}" style="width:28px;height:28px;${isPlaying ? '' : 'fill:currentColor'}"></i>`;
+      lucide.createIcons();
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      }
+    }
+
+    function showMessage(message, isError) {
+      playerMessage.textContent = message;
+      playerMessage.classList.toggle('is-error', Boolean(isError));
+    }
+
+    folderInput.addEventListener('change', async (event) => {
+      const files = Array.from(event.target.files);
+      const audioFiles = files.filter((file) =>
+        file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|m4a|ogg|flac|aac)$/i)
+      );
+
+      if (!audioFiles.length) {
+        rawFiles = [];
+        activePlaylist = [];
+        renderPlaylist();
+        resetTrackInfo();
+        showMessage('Tidak ditemukan file musik dalam folder ini.', true);
+        return;
+      }
+
+      audioFiles.sort((a, b) => {
+        const pathA = a.webkitRelativePath || a.name;
+        const pathB = b.webkitRelativePath || b.name;
+        return pathA.localeCompare(pathB, 'id', { numeric: true });
+      });
+
+      rawFiles = audioFiles.map((file, id) => ({
+        id,
+        file,
+        folderName: getFolderName(file)
+      }));
+
+      folderStates = {};
+      rawFiles.forEach(item => {
+        folderStates[item.folderName] = true;
+      });
+
+      buildActivePlaylist();
+      currentIndex = 0;
+      showMessage('', false);
+      renderPlaylist();
+      
+      if (activePlaylist.length) {
+        loadTrack(currentIndex);
+        playTrack();
+      }
+
+      // Store files permanently to IndexedDB
+      await saveAllTracksToStorage(rawFiles, folderStates);
+    });
+
+    function getFolderName(file) {
+      const relativePath = file.webkitRelativePath || file.name;
+      const pathParts = relativePath.split('/');
+      return pathParts.length > 1 ? pathParts.slice(0, -1).join('/') : 'Folder Utama';
+    }
+
+    function buildActivePlaylist() {
+      activePlaylist = rawFiles.filter(item => folderStates[item.folderName]);
+    }
+
+    function resetTrackInfo() {
+      trackTitle.textContent = 'Belum ada lagu dipilih';
+      trackPath.textContent = '';
+      trackStatus.textContent = '— / —';
+    }
+
+    function loadTrack(index) {
+      if (!activePlaylist.length) {
+        audioPlayer.src = '';
+        resetTrackInfo();
+        return;
+      }
+
+      if (index >= activePlaylist.length) index = 0;
+      if (index < 0) index = activePlaylist.length - 1;
+      currentIndex = index;
+
+      if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
+      const currentItem = activePlaylist[currentIndex];
+      activeObjectUrl = URL.createObjectURL(currentItem.file);
+      audioPlayer.src = activeObjectUrl;
+
+      trackTitle.textContent = currentItem.file.name;
+      trackPath.textContent = currentItem.file.webkitRelativePath ? `📁 ${currentItem.file.webkitRelativePath}` : '';
+      trackStatus.textContent = `Lagu ${currentIndex + 1} dari ${activePlaylist.length}`;
+
+      updatePlaylistHighlight();
+      setupMediaSession(currentItem.file.name, currentItem.folderName);
+
+      if (document.hidden) {
+        showCustomBackgroundNotification(
+          currentItem.file.name,
+          `Memutar dari: ${currentItem.folderName}`
+        );
+      }
+    }
+
+    function playTrack() {
+      if (!activePlaylist.length) return;
+      audioPlayer.play()
+        .then(() => {
+          updatePlayControl(true);
+          showMessage('', false);
+          if (document.hidden && activePlaylist[currentIndex]) {
+            showCustomBackgroundNotification(
+              activePlaylist[currentIndex].file.name,
+              `Memutar dari: ${activePlaylist[currentIndex].folderName}`
+            );
+          }
+        })
+        .catch(() => {
+          updatePlayControl(false);
+          showMessage('Pemutaran belum dapat dimulai. Coba tekan tombol putar.', true);
+        });
+    }
+    
+    function pauseTrack() {
+      audioPlayer.pause();
+      updatePlayControl(false);
+      if (document.hidden && activePlaylist[currentIndex]) {
+        showCustomBackgroundNotification(
+          "⏸ Dijeda: " + activePlaylist[currentIndex].file.name,
+          `Minecraft Music Player`
+        );
+      }
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (!activePlaylist.length) {
+        showMessage('Tidak ada lagu aktif yang dapat diputar.', true);
+        return;
+      }
+      audioPlayer.paused ? playTrack() : pauseTrack();
+    });
+
+    function nextTrack() {
+      if (!activePlaylist.length) return;
       loadTrack((currentIndex + 1) % activePlaylist.length);
       playTrack();
     }
@@ -817,4 +1138,57 @@
           downBtn.disabled = item.rawIndex === rawFiles.length - 1;
           downBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            moveItem(item.
+            moveItem(item.rawIndex, item.rawIndex + 1);
+          });
+
+          reorderBtns.append(upBtn, downBtn);
+          itemEl.append(selectBtn, reorderBtns);
+          itemsContainer.appendChild(itemEl);
+        });
+
+        folderGroup.append(folderHeader, itemsContainer);
+        playlistTree.appendChild(folderGroup);
+      });
+
+      lucide.createIcons();
+    }
+
+    function updatePlaylistHighlight() {
+      renderPlaylist();
+    }
+
+    function setupMediaSession(title, albumName = 'Folder Musik Lokal') {
+      if (!('mediaSession' in navigator)) return;
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title,
+        artist: 'Minecraft Music Player',
+        album: albumName,
+        artwork: [
+          { src: MINECRAFT_DISC_ICON, sizes: '96x96', type: 'image/svg+xml' },
+          { src: MINECRAFT_DISC_ICON, sizes: '512x512', type: 'image/svg+xml' }
+        ]
+      });
+
+      navigator.mediaSession.setActionHandler('play', playTrack);
+      navigator.mediaSession.setActionHandler('pause', pauseTrack);
+      navigator.mediaSession.setActionHandler('previoustrack', prevTrack);
+      navigator.mediaSession.setActionHandler('nexttrack', nextTrack);
+      
+      try {
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+          if (details.seekTime && audioPlayer.duration) {
+            audioPlayer.currentTime = details.seekTime;
+          }
+        });
+      } catch (e) {
+        // Fallback
+      }
+    }
+
+    lucide.createIcons();
+  </script>
+</body>
+</html>
+                  
+          
