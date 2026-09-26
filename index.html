@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal & Jembatan Website</title>
+
+    <!-- Font & Icon (FontAwesome & Google Fonts) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        /* Header Section */
+        header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .logo-icon {
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin: 0 auto 1rem;
+            box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.5);
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            color: #94a3b8;
+            font-size: 1rem;
+        }
+
+        /* Search Bar */
+        .search-container {
+            margin-top: 1.5rem;
+            position: relative;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-container input {
+            width: 100%;
+            padding: 0.85rem 1rem 0.85rem 3rem;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            color: #fff;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .search-container input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+        }
+
+        .search-container i {
+            position: absolute;
+            left: 1.2rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #64748b;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        /* Card Component */
+        .card {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.3);
+            background: rgba(30, 41, 59, 0.85);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+        }
+
+        .card-title h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .card-badge {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            background: rgba(139, 92, 246, 0.2);
+            color: #c084fc;
+            display: inline-block;
+            margin-top: 0.2rem;
+        }
+
+        .card-desc {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 1.2rem;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .card:hover .card-footer i {
+            transform: translateX(5px);
+        }
+
+        .card-footer i {
+            transition: transform 0.2s ease;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: auto;
+            padding-top: 3rem;
+            text-align: center;
+            color: #64748b;
+            font-size: 0.85rem;
+        }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 600px) {
+            header h1 {
+                font-size: 1.75rem;
+            }
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-icon">
+                <i class="fa-solid fa-compass"></i>
+            </div>
+            <h1>Portal Utama</h1>
+            <p>Pilih layanan atau situs web yang ingin Anda tuju di bawah ini</p>
+
+            <!-- Search Bar -->
+            <div class="search-container">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="searchInput" placeholder="Cari nama situs atau deskripsi..." onkeyup="filterCards()">
+            </div>
+        </header>
+
+        <!-- Dynamic Web List -->
+        <main class="grid" id="websiteGrid">
+            <!-- Disini daftar website akan dimuat otomatis via Javascript -->
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <p>&copy; 2026 Portal Utama. Semua Hak Cipta Dilindungi.</p>
+        </footer>
+    </div>
+
+    <!-- Script Data Website -->
+    <script>
+        // DAFTAR WEBSITE / LINK
+        // Tambahkan, edit, atau hapus item di bawah ini sesuai kebutuhan Anda:
+        const websites = [
+            {
+                title: "music",
+                desc: "tempat music.",
+                url: "https://steve8wealther-svg.github.io/music-STVE/music.html",
+                icon: "fa-shopping-bag",
+                badge: "E-Commerce"
+            },
+            {
+                title: "money",
+                desc: "tempat pencatatan keuangan.",
+                url: "https://steve8wealther-svg.github.io/music-STVE/money.html",
+                icon: "fa-newspaper",
+                badge: "Informasi"
+            },
+            {
+                title: "Portal Anggota",
+                desc: "Halaman login khusus member dan pengelolaan akun.",
+                url: "https://example.com/member",
+                icon: "fa-user-shield",
+                badge: "Privat"
+            },
+            {
+                title: "Layanan Pelanggan",
+                desc: "Pusat bantuan, FAQ, dan kontak support via WhatsApp/Email.",
+                url: "https://example.com/support",
+                icon: "fa-headset",
+                badge: "Bantuan"
+            },
+            {
+                title: "Galeri Portofolio",
+                desc: "Kumpulan karya, proyek, dan pencapaian tim kami.",
+                url: "https://example.com/portfolio",
+                icon: "fa-briefcase",
+                badge: "Karya"
+            },
+            {
+                title: "Komunitas & Forum",
+                desc: "Ruang diskusi bersama pengguna lain dan tim pengembang.",
+                url: "https://example.com/forum",
+                icon: "fa-comments",
+                badge: "Sosial"
+            }
+        ];
+
+        // Fungsi Render Kartu
+        function renderWebsites(items) {
+            const grid = document.getElementById('websiteGrid');
+            grid.innerHTML = '';
+
+            if (items.length === 0) {
+                grid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 2rem;">Situs yang Anda cari tidak ditemukan.</p>`;
+                return;
+            }
+
+            items.forEach(item => {
+                const card = document.createElement('a');
+                card.className = 'card';
+                card.href = item.url;
+                card.target = '_blank'; // Membuka di tab baru
+
+                card.innerHTML = `
+                    <div>
+                        <div class="card-header">
+                            <div class="card-icon">
+                                <i class="fa-solid ${item.icon}"></i>
+                            </div>
+                            <div class="card-title">
+                                <h3>${item.title}</h3>
+                                <span class="card-badge">${item.badge}</span>
+                            </div>
+                        </div>
+                        <p class="card-desc">${item.desc}</p>
+                    </div>
+                    <div class="card-footer">
+                        <span>Buka Situs</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // Fungsi Filter Pencarian
+        function filterCards() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = websites.filter(item => 
+                item.title.toLowerCase().includes(query) || 
+                item.desc.toLowerCase().includes(query) ||
+                item.badge.toLowerCase().includes(query)
+            );
+            renderWebsites(filtered);
+        }
+
+        // Inisialisasi Pertama
+        renderWebsites(websites);
+    </script>
+</body>
+</html>
