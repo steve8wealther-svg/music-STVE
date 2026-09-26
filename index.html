@@ -244,16 +244,16 @@
             {
                 title: "music",
                 desc: "tempat music.",
-                url: "https://steve8wealther-svg.github.io/music-STVE/music.html",
-                icon: "fa-shopping-bag",
-                badge: "E-Commerce"
+                url: "music.html",
+                icon: "fa-music",
+                badge: "hiburan"
             },
             {
                 title: "money",
                 desc: "tempat pencatatan keuangan.",
-                url: "https://steve8wealther-svg.github.io/music-STVE/money.html",
-                icon: "fa-newspaper",
-                badge: "Informasi"
+                url: "money.html",
+                icon: "fa-wallet",
+                badge: "pencatatan"
             },
             {
                 title: "Portal Anggota",
@@ -299,7 +299,7 @@
                 const card = document.createElement('a');
                 card.className = 'card';
                 card.href = item.url;
-                card.target = '_blank'; // Membuka di tab baru
+                card.target = '_self'; // Membuka di tab baru
 
                 card.innerHTML = `
                     <div>
